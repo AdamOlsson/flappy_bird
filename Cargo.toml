@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+game_engine = { git = "https://github.com/AdamOlsson/game_engine.git" }
+cgmath = "0.18.0"
+winit = "0.29.15"
+pollster = "0.3.0"
