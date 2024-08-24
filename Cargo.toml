@@ -8,3 +8,4 @@ game_engine = { git = "https://github.com/AdamOlsson/game_engine.git" }
 cgmath = "0.18.0"
 winit = "0.29.15"
 pollster = "0.3.0"
+rand = "0.8.5" 
