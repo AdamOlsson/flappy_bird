@@ -177,14 +177,6 @@ impl Simulation for FlappyBird {
         &self.integrator.get_bodies()
     }
 
-    fn get_num_active_instances(&self) -> u32 {
-        1
-    }
-
-    fn get_target_num_instances(&self) -> u32 {
-        1
-    }
-
     fn jump(&mut self) {
         self.integrator.set_velocity_y(0, 20.0);
     }
