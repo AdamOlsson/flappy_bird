@@ -1,5 +1,6 @@
 use cgmath::{Vector2, Vector3, Zero};
 use game_engine::engine::physics_engine::broadphase::BroadPhase;
+use game_engine::engine::physics_engine::collision::collision_candidates::CollisionCandidates;
 use game_engine::engine::physics_engine::collision::collision_handler::IdentityCollisionSolver;
 use game_engine::engine::physics_engine::collision::CollisionGraph;
 use game_engine::engine::physics_engine::narrowphase::NarrowPhase;
@@ -43,7 +44,6 @@ impl FlappyBird {
         let r = PIPE_PAIR_HOLE_WIEIGHT_RANGE_ABS;
         let (top_pipe1, bot_pipe1) = Self::create_pipe_pair(1, 2, PIPE_START_X, PIPE_WIDTH,
             PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), window_size.height as f32, PIPE_PAIR_VELOCITY_X);
-
         let (top_pipe2, bot_pipe2) = Self::create_pipe_pair(3, 4, PIPE_START_X + 1.0*PIPE_PAIR_DISTANCE_X, 
             PIPE_WIDTH, PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), window_size.height as f32, PIPE_PAIR_VELOCITY_X);
         
@@ -125,23 +125,19 @@ impl Simulation for FlappyBird {
             panic!("Game Over! Total score: {}", self.score);
         }
     
-        let candidates = self.broadphase.collision_detection(bodies);
-        
-        if candidates.len() != 0 {
-            println!("{:?}", candidates);
-        }
-
-        let graphs: Vec<CollisionGraph> = candidates.iter()
-            .map(|cs| self.narrowphase.collision_detection(bodies,cs))
-            .collect();
-
+        // We can unfortunately not use the developed broadphase collision detection,
+        // BlockMap, because the size difference between the player and the pipe is 
+        // too large. Instead we do a project specific broadphase.
         let player_id: usize = 0;
-        for g in graphs {
-           let player_has_collided = g.collisions.iter()
-               .fold(false, |acc, (i,j)| acc || i == &player_id || j == &player_id);
-            if player_has_collided {
-                panic!("Game Over! Total score: {}", self.score);
-            }
+        let candidates = CollisionCandidates::new(
+            vec![player_id, self.next_pipe_pair_idx, self.next_pipe_pair_idx +1]);
+        let graph = self.narrowphase.collision_detection(bodies, &candidates);
+
+        // Check if player has collidided with pipe
+        let player_has_collided = graph.collisions.iter()
+            .fold(false, |acc, (i,j)| acc || i == &player_id || j == &player_id);
+        if player_has_collided {
+            panic!("Game Over! Total score: {}", self.score);
         }
 
         if Self::is_passed_pipe_pair_off_left_screen(
