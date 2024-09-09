@@ -1,14 +1,15 @@
 use cgmath::{Vector2, Vector3, Zero};
+use game_engine::engine::game_engine::GameEngineBuilder;
 use game_engine::engine::physics_engine::broadphase::BroadPhase;
 use game_engine::engine::physics_engine::collision::collision_candidates::CollisionCandidates;
 use game_engine::engine::physics_engine::collision::collision_handler::IdentityCollisionSolver;
-use game_engine::engine::physics_engine::collision::CollisionGraph;
 use game_engine::engine::physics_engine::narrowphase::NarrowPhase;
 use game_engine::engine::physics_engine::{broadphase, narrowphase};
+use game_engine::engine::renderer_engine::sprite_sheet::{SpriteCoordinate, SpriteSheet};
 use rand::Rng;
 use winit::dpi::PhysicalSize;
 use game_engine::engine::physics_engine::collision::collision_body::CollisionBody;
-use game_engine::engine::{physics_engine::integrator::verlet::VerletIntegrator, run::run, Simulation};
+use game_engine::engine::{physics_engine::integrator::verlet::VerletIntegrator, Simulation};
 
 struct FlappyBird {
     broadphase: Box<dyn BroadPhase>,
@@ -24,10 +25,11 @@ struct FlappyBird {
 }
 
 const PIPE_START_X: f32 = 100.0;
-const PIPE_WIDTH: f32 = 250.0;
-const PIPE_PAIR_DISTANCE_Y: f32 = 400.0;
+const PIPE_WIDTH: f32 = 350.0;
+const PIPE_HEIGHT: f32 = 700.0;
+const PIPE_PAIR_DISTANCE_Y: f32 = 430.0;
 const PIPE_PAIR_DISTANCE_X: f32 = 1000.0;
-const PIPE_PAIR_HOLE_WIEIGHT_RANGE_ABS: f32 = 0.75;
+const PIPE_PAIR_HOLE_WIEIGHT_RANGE_ABS: f32 = 0.6;
 const PIPE_PAIR_VELOCITY_X: f32 = -4.0;
 
 impl FlappyBird {
@@ -37,18 +39,20 @@ impl FlappyBird {
         let accelleration = Vector3::new(0.0, -gravity, 0.0);
         let player_x = -1.0*((window_size.width / 2) as f32);
         let player_pos = Vector3::new(player_x, 0.0,0.0);
-        let player = CollisionBody::circle(0, Vector3::zero(), accelleration, 
+        let mut player = CollisionBody::circle(0, Vector3::zero(), accelleration, 
             player_pos.clone(), player_pos, 50.0, Vector3::new(255.0,0.0,0.0)); 
         
+        player.set_sprite(SpriteCoordinate::new([2.0,0.0], [3.0,1.0]));
+
         let mut rng = rand::thread_rng();
         let r = PIPE_PAIR_HOLE_WIEIGHT_RANGE_ABS;
-        let (top_pipe1, bot_pipe1) = Self::create_pipe_pair(1, 2, PIPE_START_X, PIPE_WIDTH,
+        let (top_pipe1, bot_pipe1) = Self::create_pipe_pair(1, 2, PIPE_START_X, [PIPE_WIDTH, PIPE_HEIGHT],
             PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), window_size.height as f32, PIPE_PAIR_VELOCITY_X);
         let (top_pipe2, bot_pipe2) = Self::create_pipe_pair(3, 4, PIPE_START_X + 1.0*PIPE_PAIR_DISTANCE_X, 
-            PIPE_WIDTH, PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), window_size.height as f32, PIPE_PAIR_VELOCITY_X);
+            [PIPE_WIDTH, PIPE_HEIGHT], PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), window_size.height as f32, PIPE_PAIR_VELOCITY_X);
         
         let (top_pipe3, bot_pipe3) = Self::create_pipe_pair(5, 6, PIPE_START_X + 2.0*PIPE_PAIR_DISTANCE_X, 
-            PIPE_WIDTH, PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), window_size.height as f32, PIPE_PAIR_VELOCITY_X);
+            [PIPE_WIDTH, PIPE_HEIGHT], PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), window_size.height as f32, PIPE_PAIR_VELOCITY_X);
 
         let integrator = VerletIntegrator::new(f32::MAX,
             vec![player, top_pipe1, bot_pipe1, top_pipe2, bot_pipe2, top_pipe3, bot_pipe3]);
@@ -70,27 +74,34 @@ impl FlappyBird {
 
     fn create_pipe_pair(
         id_top: usize, id_bot: usize,
-        x: f32, pipe_width:f32, hole_size:f32, 
+        x: f32, pipe_dims: [f32; 2], hole_size:f32, 
         hole_weight:f32, window_height:f32, velocity_x: f32
     ) -> (CollisionBody, CollisionBody) {
-        
-        let top_weight = 1.0 - hole_weight;
-        let bot_weight = 1.0 + hole_weight;
 
         let velocity = Vector3::new(velocity_x,0.0,0.0);
         let acceleration = Vector3::zero();
         let color = Vector3::new(0.0,255.0,0.0);
 
-        let top_position = Vector3::new(x, 
-            window_height - (window_height-hole_size/2.0)*top_weight, 0.0);
-        let top_prev_position = top_position - velocity;
-        let top = CollisionBody::rectangle(id_top, velocity, acceleration, top_prev_position,
-            top_position, pipe_width, window_height*2.0, color);
+        let top_y = hole_size / 2.0;
+        let bot_y = (-1.0 * hole_size / 2.0) - pipe_dims[1];
 
-        let bot_position = Vector3::new(x, -window_height, 0.0);
+        let offset = window_height*hole_weight;
+        let offset_top_y = top_y + offset;
+        let offset_bot_y = bot_y + offset;
+
+        let top_position = Vector3::new(x, offset_top_y,0.0);
+        let top_prev_position = top_position - velocity;
+        let mut top = CollisionBody::rectangle(id_top, velocity, acceleration, top_prev_position,
+            top_position, pipe_dims[0], pipe_dims[1], color);
+        top.set_sprite(SpriteCoordinate::new([1.0,0.0], [2.0, 2.0]));
+
+
+        let bot_position = Vector3::new(x, offset_bot_y, 0.0);
         let bot_prev_position = bot_position - velocity;
-        let bot = CollisionBody::rectangle(id_bot, velocity, acceleration, bot_prev_position,
-            bot_position, pipe_width,  (window_height - hole_size/2.0)*bot_weight, color) ;
+        let mut bot = CollisionBody::rectangle(id_bot, velocity, acceleration, bot_prev_position,
+            bot_position, pipe_dims[0],  pipe_dims[1], color) ;
+
+        bot.set_sprite(SpriteCoordinate::new([0.0,0.0], [1.0, 2.0]));
 
         (top, bot)
     }
@@ -154,7 +165,7 @@ impl Simulation for FlappyBird {
             let old_top = &bodies[self.passed_pipe_pair_idx];
             let old_bot = &bodies[self.passed_pipe_pair_idx +1];
             let (new_top, new_bot) = Self::create_pipe_pair(
-                old_top.id, old_bot.id, new_x, PIPE_WIDTH, PIPE_PAIR_DISTANCE_Y, 
+                old_top.id, old_bot.id, new_x, [PIPE_WIDTH, PIPE_HEIGHT], PIPE_PAIR_DISTANCE_Y, 
                 rng.gen_range(-r..r), self.window_size.y, PIPE_PAIR_VELOCITY_X);
             
             bodies[self.passed_pipe_pair_idx] = new_top;
@@ -183,7 +194,18 @@ impl Simulation for FlappyBird {
 }
 
 fn main() {
+    let sprite_sheet_bytes = include_bytes!("../assets/sprite_sheet.png");
     let window_size = PhysicalSize::new(1024,600);
     let flappy_bird = FlappyBird::new(&window_size);
-    pollster::block_on(run(flappy_bird, window_size, 20));
+
+
+    let game_engine = GameEngineBuilder::new()
+        .window_size(window_size)
+        .physics_engine(flappy_bird)
+        .texture(SpriteSheet::new(sprite_sheet_bytes, 16,16))
+        .target_frames_per_sec(60)
+        .target_ticks_per_frame(1)
+        .build();
+
+    game_engine.run();
 }
