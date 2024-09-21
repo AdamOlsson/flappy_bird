@@ -29,7 +29,6 @@ struct FlappyBird {
 }
 
 // TODO:
-// - Fix rendering of pipe, bottom side of the upper pipes do not render correctly
 // - Render menu text 
 // - Menu ( don't crash on death and wait for start until user press button)
 
@@ -38,7 +37,7 @@ const PIPE_WIDTH: f32 = 350.0;
 const PIPE_HEIGHT: f32 = 700.0;
 const PIPE_PAIR_DISTANCE_Y: f32 = 430.0;
 const PIPE_PAIR_DISTANCE_X: f32 = 1000.0;
-const PIPE_PAIR_HOLE_WIEIGHT_RANGE_ABS: f32 = 0.6;
+const PIPE_PAIR_HOLE_WIEIGHT_RANGE_ABS: f32 = 0.5;
 const PIPE_PAIR_VELOCITY_X: f32 = -4.0;
 
 impl FlappyBird {
