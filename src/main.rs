@@ -5,11 +5,15 @@ use game_engine::engine::physics_engine::collision::collision_candidates::Collis
 use game_engine::engine::physics_engine::collision::collision_handler::IdentityCollisionSolver;
 use game_engine::engine::physics_engine::narrowphase::NarrowPhase;
 use game_engine::engine::physics_engine::{broadphase, narrowphase};
-use game_engine::engine::renderer_engine::sprite_sheet::{SpriteCoordinate, SpriteSheet};
+use game_engine::engine::renderer_engine::asset::asset::Asset;
+use game_engine::engine::renderer_engine::asset::font::{Font, Writer};
+use game_engine::engine::renderer_engine::asset::sprite_sheet::SpriteCoordinate;
+use game_engine::engine::renderer_engine::render_engine::RenderEngineControl;
+use game_engine::engine::{PhysicsEngine, RenderEngine};
 use rand::Rng;
 use winit::dpi::PhysicalSize;
 use game_engine::engine::physics_engine::collision::collision_body::CollisionBody;
-use game_engine::engine::{physics_engine::integrator::verlet::VerletIntegrator, Simulation};
+use game_engine::engine::physics_engine::integrator::verlet::VerletIntegrator;
 
 struct FlappyBird {
     broadphase: Box<dyn BroadPhase>,
@@ -23,6 +27,11 @@ struct FlappyBird {
     next_pipe_pair_idx: usize,
     passed_pipe_pair_idx: usize,
 }
+
+// TODO:
+// - Fix rendering of pipe, bottom side of the upper pipes do not render correctly
+// - Render menu text 
+// - Menu ( don't crash on death and wait for start until user press button)
 
 const PIPE_START_X: f32 = 100.0;
 const PIPE_WIDTH: f32 = 350.0;
@@ -125,7 +134,7 @@ impl FlappyBird {
 
 }
 
-impl Simulation for FlappyBird {
+impl PhysicsEngine for FlappyBird {
 
     fn update(&mut self) {
         self.integrator.update(self.dt);
@@ -179,7 +188,6 @@ impl Simulation for FlappyBird {
                 self.next_pipe_pair_idx += 1;
             }
             self.score += 1;
-            println!("Score: {}", self.score);
         }
 
     }
@@ -193,16 +201,45 @@ impl Simulation for FlappyBird {
     }
 }
 
+impl RenderEngine for FlappyBird {
+    
+    fn render(&mut self, engine_ctl: &mut RenderEngineControl) {
+        let bodies = self.integrator.get_bodies();
+        let rect_instances = game_engine::engine::util::get_rectangle_instances(bodies);
+        let circle_instances = game_engine::engine::util::get_circle_instances(bodies);
+
+        let _ = engine_ctl.render_background();
+        let _ = engine_ctl.render_rectangles(&rect_instances, false);
+        let _ = engine_ctl.render_circles(&circle_instances, false);
+
+        let text_size = 110.;
+        let score = format!("{}", self.score);
+        let text = Writer::write(&score, &[0.0, 400.0, 0.0], text_size);
+        let _ = engine_ctl.render_text(text, false);
+
+        let _ = engine_ctl.post_process();
+    }
+}
+
 fn main() {
     let sprite_sheet_bytes = include_bytes!("../assets/sprite_sheet.png");
+    let sprite_sheet_asset = Asset::sprite_sheet(sprite_sheet_bytes, 16,16);
+
+    let background_bytes = include_bytes!("../assets/background.png");
+    let background_asset = Asset::background(background_bytes);
+
+    let font = Font::new(include_bytes!("../assets/font.png"), 11, 11);
+
     let window_size = PhysicalSize::new(1024,600);
     let flappy_bird = FlappyBird::new(&window_size);
 
-
     let game_engine = GameEngineBuilder::new()
+        .window_title("Flappy Bird".to_string())
+        .engine(flappy_bird)
+        .font(font)
         .window_size(window_size)
-        .physics_engine(flappy_bird)
-        .texture(SpriteSheet::new(sprite_sheet_bytes, 16,16))
+        .sprite_sheet(sprite_sheet_asset)
+        .background(background_asset)
         .target_frames_per_sec(60)
         .target_ticks_per_frame(1)
         .build();
