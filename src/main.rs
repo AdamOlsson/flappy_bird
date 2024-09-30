@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use cgmath::{Vector2, Vector3, Zero};
 use game_engine::engine::game_engine::GameEngineBuilder;
 use game_engine::engine::physics_engine::broadphase::BroadPhase;
@@ -8,12 +10,16 @@ use game_engine::engine::physics_engine::{broadphase, narrowphase};
 use game_engine::engine::renderer_engine::asset::asset::Asset;
 use game_engine::engine::renderer_engine::asset::font::{Font, Writer};
 use game_engine::engine::renderer_engine::asset::sprite_sheet::SpriteCoordinate;
+use game_engine::engine::renderer_engine::post_process::PostProcessFilterId;
 use game_engine::engine::renderer_engine::render_engine::RenderEngineControl;
 use game_engine::engine::{PhysicsEngine, RenderEngine};
+use game_state::GameState;
 use rand::Rng;
 use winit::dpi::PhysicalSize;
 use game_engine::engine::physics_engine::collision::collision_body::CollisionBody;
 use game_engine::engine::physics_engine::integrator::verlet::VerletIntegrator;
+
+mod game_state;
 
 struct FlappyBird {
     broadphase: Box<dyn BroadPhase>,
@@ -22,15 +28,21 @@ struct FlappyBird {
     dt: f32,
     window_size: Vector2<f32>,
 
+    game_state: GameState,
     // Game specifics
     score: u32,
     next_pipe_pair_idx: usize,
     passed_pipe_pair_idx: usize,
+    time_of_game_over: Instant,
+    restart_available: bool,
+    flash_restart_text: bool,
+    flash_counter: Instant,
+    
 }
 
 // TODO:
-// - Render menu text 
-// - Menu ( don't crash on death and wait for start until user press button)
+// - wait for start until user press button
+// - move the first pipe pair further away
 
 const PIPE_START_X: f32 = 100.0;
 const PIPE_WIDTH: f32 = 350.0;
@@ -73,12 +85,49 @@ impl FlappyBird {
         let next_pipe_pair_idx = 1;
         let passed_pipe_pair_idx = integrator.get_bodies().len() -1;
         let score = 0;
-
+        let game_state = GameState::Running;
+        let time_of_game_over = Instant::now();
+        let restart_available = false;
+        let flash_restart_text = false;
+        let flash_counter = Instant::now();
         Self {
             integrator, dt, window_size, next_pipe_pair_idx, passed_pipe_pair_idx, score,
-            broadphase, narrowphase,
+            broadphase, narrowphase, game_state, time_of_game_over, flash_restart_text,
+            flash_counter, restart_available
         }
     }
+
+    fn restart_game(&mut self) {
+        let gravity: f32 = 1000000.0;
+        let accelleration = Vector3::new(0.0, -gravity, 0.0);
+        let player_x = -1.0*(self.window_size.y / 2.0);
+        let player_pos = Vector3::new(player_x, 0.0,0.0);
+        let mut player = CollisionBody::circle(0, Vector3::zero(), accelleration, 
+            player_pos.clone(), player_pos, 50.0, Vector3::new(255.0,0.0,0.0)); 
+        
+        player.set_sprite(SpriteCoordinate::new([2.0,0.0], [3.0,1.0]));
+
+        let mut rng = rand::thread_rng();
+        let r = PIPE_PAIR_HOLE_WIEIGHT_RANGE_ABS;
+        let (top_pipe1, bot_pipe1) = Self::create_pipe_pair(1, 2, PIPE_START_X, [PIPE_WIDTH, PIPE_HEIGHT],
+            PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), self.window_size.y, PIPE_PAIR_VELOCITY_X);
+        let (top_pipe2, bot_pipe2) = Self::create_pipe_pair(3, 4, PIPE_START_X + 1.0*PIPE_PAIR_DISTANCE_X, 
+            [PIPE_WIDTH, PIPE_HEIGHT], PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), self.window_size.y, PIPE_PAIR_VELOCITY_X);
+        
+        let (top_pipe3, bot_pipe3) = Self::create_pipe_pair(5, 6, PIPE_START_X + 2.0*PIPE_PAIR_DISTANCE_X, 
+            [PIPE_WIDTH, PIPE_HEIGHT], PIPE_PAIR_DISTANCE_Y, rng.gen_range(-r..r), self.window_size.y, PIPE_PAIR_VELOCITY_X);
+  
+        self.integrator = VerletIntegrator::new(f32::MAX,
+            vec![player, top_pipe1, bot_pipe1, top_pipe2, bot_pipe2, top_pipe3, bot_pipe3]);
+        self.next_pipe_pair_idx = 1;
+        self.passed_pipe_pair_idx = self.integrator.get_bodies().len() -1;
+        self.score = 0;
+        self.restart_available = false;
+        self.flash_restart_text = false;
+        self.game_state = GameState::Running;
+    }
+
+
 
     fn create_pipe_pair(
         id_top: usize, id_bot: usize,
@@ -136,12 +185,26 @@ impl FlappyBird {
 impl PhysicsEngine for FlappyBird {
 
     fn update(&mut self) {
+        
+        match self.game_state {
+            GameState::Running => (),
+            GameState::GameOver => {
+                if self.time_of_game_over.elapsed() > Duration::from_secs(3) {
+                    self.restart_available = true;
+                }
+                return;
+            }
+            _ => return,
+        }
+
         self.integrator.update(self.dt);
         
         let bodies = self.integrator.get_bodies_mut();
         let player = &bodies[0];
         if player.position.y.abs() > self.window_size.y {
-            panic!("Game Over! Total score: {}", self.score);
+            self.game_state = GameState::GameOver;
+            self.time_of_game_over = Instant::now();
+            return;
         }
     
         // We can unfortunately not use the developed broadphase collision detection,
@@ -156,7 +219,9 @@ impl PhysicsEngine for FlappyBird {
         let player_has_collided = graph.collisions.iter()
             .fold(false, |acc, (i,j)| acc || i == &player_id || j == &player_id);
         if player_has_collided {
-            panic!("Game Over! Total score: {}", self.score);
+            self.game_state = GameState::GameOver;
+            self.time_of_game_over = Instant::now();
+            return;
         }
 
         if Self::is_passed_pipe_pair_off_left_screen(
@@ -196,7 +261,13 @@ impl PhysicsEngine for FlappyBird {
     }
 
     fn jump(&mut self) {
-        self.integrator.set_velocity_y(0, 20.0);
+        match self.game_state {
+            GameState::Running => self.integrator.set_velocity_y(0, 20.0),
+            GameState::GameOver => if self.restart_available {
+                self.restart_game(); 
+            },
+            _ => (),
+        }
     }
 }
 
@@ -204,19 +275,58 @@ impl RenderEngine for FlappyBird {
     
     fn render(&mut self, engine_ctl: &mut RenderEngineControl) {
         let bodies = self.integrator.get_bodies();
+
+        let mut texture_handle = engine_ctl.request_texture_handle();
+
         let rect_instances = game_engine::engine::util::get_rectangle_instances(bodies);
         let circle_instances = game_engine::engine::util::get_circle_instances(bodies);
 
-        let _ = engine_ctl.render_background();
-        let _ = engine_ctl.render_rectangles(&rect_instances, false);
-        let _ = engine_ctl.render_circles(&circle_instances, false);
+        engine_ctl.render_background(&texture_handle).expect("Failed to render background.");
+        engine_ctl.render_rectangles(&texture_handle, &rect_instances, false).expect("Failed to render rectangles");
+        engine_ctl.render_circles(&texture_handle, &circle_instances, false).expect("Failed to render circles");
 
         let text_size = 110.;
         let score = format!("{}", self.score);
         let text = Writer::write(&score, &[0.0, 400.0, 0.0], text_size);
-        let _ = engine_ctl.render_text(text, false);
+        engine_ctl.render_text(&texture_handle, text, false).expect("Failed to render score");
 
-        let _ = engine_ctl.post_process();
+
+        match self.game_state {
+            GameState::GameOver => {
+                texture_handle = engine_ctl.run_post_process_filter(
+                    &PostProcessFilterId::Tint, &texture_handle)
+                    .expect("Failed to run post process filter tint");
+                
+                let text_size = 110.;
+                let text = Writer::write("Game Over", &[-495.0, -55.0, 0.0], text_size);
+                engine_ctl.render_text(&texture_handle, text, false).expect("Failed to render score");
+
+                let text_size = 50.;
+                let score_text = format!("You scored {} points", self.score);
+                let text = Writer::write(&score_text, &[-(score_text.len() as f32 * text_size) / 2., -175.0, 0.0], text_size);
+                engine_ctl.render_text(&texture_handle, text, false).expect("Failed to render score");
+
+                if self.flash_restart_text && self.restart_available { 
+                    let text_size = 50.;
+                    let text = "Press space to restart" ;
+                    let text_ = Writer::write(&text, &[-(text.len() as f32 * text_size) / 2., -325.0, 0.0], text_size);
+                    engine_ctl.render_text(&texture_handle, text_, false).expect("Failed to render score");
+                }
+
+                if self.flash_restart_text && self.flash_counter.elapsed() > Duration::from_secs(2) {
+                    self.flash_restart_text = !self.flash_restart_text;
+                    self.flash_counter = Instant::now();
+                }
+
+                if !self.flash_restart_text && self.flash_counter.elapsed() > Duration::from_secs(1) {
+                    self.flash_restart_text = !self.flash_restart_text;
+                    self.flash_counter = Instant::now();
+                }
+            },
+            _ => (),
+        }
+
+        engine_ctl.present(&texture_handle).expect("Failed to present texture");
     }
 }
 
@@ -236,6 +346,7 @@ fn main() {
         .window_title("Flappy Bird".to_string())
         .engine(flappy_bird)
         .font(font)
+        .add_post_process_filters(&mut vec![PostProcessFilterId::Tint])
         .window_size(window_size)
         .sprite_sheet(sprite_sheet_asset)
         .background(background_asset)
