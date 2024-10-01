@@ -7,4 +7,4 @@ Download the repository and run
 ```cargo run -r```
 
 ## Demo
-<video src="./doc/flappy_bird.mov"></video>
+![](doc/flappy_bird.gif)
