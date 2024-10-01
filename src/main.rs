@@ -40,11 +40,7 @@ struct FlappyBird {
     
 }
 
-// TODO:
-// - wait for start until user press button
-// - move the first pipe pair further away
-
-const PIPE_START_X: f32 = 100.0;
+const PIPE_START_X: f32 = 200.0;
 const PIPE_WIDTH: f32 = 350.0;
 const PIPE_HEIGHT: f32 = 700.0;
 const PIPE_PAIR_DISTANCE_Y: f32 = 430.0;
